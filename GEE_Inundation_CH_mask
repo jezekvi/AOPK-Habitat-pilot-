@@ -1,0 +1,197 @@
+var region = ee.FeatureCollection('projects/earthengine-438311/assets/inundation_area'); // a shapefile used to delineate the study area
+var s2Sr = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED'); // Sentinel-2 imagery has been harmonized to a common baseline version
+var s2Clouds = ee.ImageCollection('COPERNICUS/S2_CLOUD_PROBABILITY');
+
+var START_DATE = ee.Date('2025-07-19'); // set date!
+var END_DATE = ee.Date('2025-07-21');
+var MAX_CLOUD_PROBABILITY = 30; // cloud masking threshold strictness
+
+// Masking functions
+function maskClouds(img) {
+  var clouds = ee.Image(img.get('cloud_mask')).select('probability');
+  var isNotCloud = clouds.lt(MAX_CLOUD_PROBABILITY);
+  return img.updateMask(isNotCloud);
+}
+
+function maskEdges(s2_img) {
+  return s2_img.updateMask(
+      s2_img.select('B8A').mask().updateMask(s2_img.select('B9').mask()));
+}
+
+// Filter collections
+var criteria = ee.Filter.and(
+    ee.Filter.bounds(region), ee.Filter.date(START_DATE, END_DATE));
+s2Sr = s2Sr.filter(criteria).map(maskEdges);
+s2Clouds = s2Clouds.filter(criteria);
+
+// Join S2 SR with cloud probability dataset
+var s2SrWithCloudMask = ee.Join.saveFirst('cloud_mask').apply({
+  primary: s2Sr,
+  secondary: s2Clouds,
+  condition:
+      ee.Filter.equals({leftField: 'system:index', rightField: 'system:index'})
+});
+
+// Apply cloud masking to all images and create new ImageCollection
+var s2CloudMasked = ee.ImageCollection(
+    ee.ImageCollection(s2SrWithCloudMask).map(maskClouds)
+);
+
+print(s2CloudMasked); // check IC
+
+// Median composite of the image collection with cloud masking applied
+var medianImage = s2CloudMasked.median().clip(region);
+
+// Canopy height and mask > 5 m
+var canopyIC = ee.ImageCollection('projects/sat-io/open-datasets/facebook/meta-canopy-height')
+  .filterBounds(region);
+
+// Merge tiles, single band is canopy height in meters
+var canopyHeight = canopyIC.mosaic().select(0).rename('canopy_height').clip(region);
+
+// Mask: keep only pixels with canopy height < 5 m
+var canopyMask = canopyHeight.lt(5).selfMask();
+
+// Apply canopy mask on median composite
+medianImage = medianImage.updateMask(canopyMask);
+
+////////////////////////////////////////////////////////
+
+// Compute additional indices
+function addIndices(image) {
+  var mndwi12 = image.expression(
+    '(B3 - B12) / (B3 + B12)', {
+      'B3': image.select('B3'),
+      'B12': image.select('B12')
+  }).rename('MNDWI12');
+  
+  return image.addBands(mndwi12);
+}
+
+// Apply decision tree classification - Jussila et al. 2023
+function classify_jussila(image) {
+  var b11 = image.select('B11');
+  var b4 = image.select('B4');
+  var b8a = image.select('B8A');
+  var b12 = image.select('B12');
+  var mndwi12 = image.select('MNDWI12');
+
+   var classification = ee.Image(0) // default dry
+    .where(b11.gte(1396)
+      .and(b4.gte(391)), 0) // dry
+    .where(b11.gte(1396)
+      .and(b4.lt(391))
+      .and(mndwi12.gte(-0.43)),0) // dry
+    .where(b11.gte(1396)
+      .and(b4.lt(391))
+      .and(mndwi12.lt(-0.43))
+      .and(b12.gte(1496)),0) // dry
+    .where(b11.gte(1396)
+      .and(b4.lt(391))
+      .and(mndwi12.lt(-0.43))
+      .and(b12.lt(1496)),1) // water
+      
+    .where(b11.lt(1396)
+      .and(b8a.gte(1817)) 
+      .and(b11.gte(1247)),0) // dry
+    .where(b11.lt(1396)
+      .and(b8a.gte(1817)) 
+      .and(b11.lt(1247)),1) // water
+    .where(b11.lt(1396)
+      .and(b8a.lt(1817)),1); // water
+     
+  return image.addBands(classification.rename('classification'));
+}
+
+// Apply decision tree classification - Lefebvre et al. 2019
+function classify_lefebvre(image) {
+  var b12 = image.select('B12');
+  var b8a = image.select('B8A');
+  
+  var classification = ee.Image(0) // default dry
+      .where(b8a.lte(1804)
+        .and(b12.lte(1131)), 1); // water
+
+return image.addBands(classification.rename('classification'));
+}
+
+// Apply NDMI 
+function NDMI(image) {
+  var classification = image.expression(
+    '(B8A - B11) / (B8A + B11)', {
+      'B8A': image.select('B8A'),
+      'B11': image.select('B11')
+  }).rename('NDMI');
+
+return image.addBands(classification.rename('classification'));
+}
+
+// Add indices and apply classification
+var indiceImage = addIndices(medianImage);
+
+var classifiedImage_jussila = classify_jussila(indiceImage); 
+var classifiedImage_lefebvre = classify_lefebvre(indiceImage); 
+var classifiedImage_NDMI = NDMI(indiceImage);
+
+// Resampling to 8-bit to reduce file size
+var binaryMask_jussila = classifiedImage_jussila.select('classification') 
+    .toByte(); // to 8bit
+    
+var binaryMask_lefebvre = classifiedImage_lefebvre.select('classification') 
+    .toByte(); // to 8bit
+    
+var band_NDMI = classifiedImage_NDMI.select('classification'); // select
+
+// Apply canopy mask also to outputs
+var binaryMask_jussila_masked = binaryMask_jussila.updateMask(canopyMask);
+var binaryMask_lefebvre_masked = binaryMask_lefebvre.updateMask(canopyMask);
+var band_NDMI_masked = band_NDMI.updateMask(canopyMask);
+
+// Export classified image to Google Drive
+Export.image.toDrive({
+  image: binaryMask_jussila_masked,
+  description: 'Inundation_Jussila_gt5m',
+  folder: 'Inundation',
+  fileNamePrefix: 'jussila_czechia_gt5m',
+  region: region.geometry(),
+  scale: 10,
+  crs: 'EPSG:32633',
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: binaryMask_lefebvre_masked,
+  description: 'Inundation_Lefebvre_gt5m',
+  folder: 'Inundation',
+  fileNamePrefix: 'lefebvre_czechia_gt5m',
+  region: region.geometry(),
+  scale: 10,
+  crs: 'EPSG:32633',
+  maxPixels: 1e13
+});
+
+Export.image.toDrive({
+  image: band_NDMI_masked,
+  description: 'Inundation_NDMI_gt5m',
+  folder: 'Inundation',
+  fileNamePrefix: 'NDMI_czechia_gt5m',
+  region: region.geometry(),
+  scale: 20,
+  crs: 'EPSG:32633',
+  maxPixels: 1e13
+});
+
+// Visualization
+Map.addLayer(band_NDMI_masked, 
+  {min: -1, max: 1, palette: ['brown', 'yellow', 'green']}, 
+  'NDMI >5m');
+  
+Map.addLayer(binaryMask_jussila_masked, 
+  {min: 0, max: 1, palette: ['yellow', 'blue']}, 
+  'jussila >5m');
+  
+Map.addLayer(binaryMask_lefebvre_masked, 
+  {min: 0, max: 1, palette: ['yellow', 'blue']}, 
+  'lefebvre >5m');
+
+Map.addLayer(canopyHeight, {min: 0, max: 40}, 'Canopy height (m)');
