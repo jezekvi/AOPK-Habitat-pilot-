@@ -79,7 +79,6 @@ list_jobs() |> as_tibble() |> count(status)
 list_jobs() |> as_tibble() -> jobs_df
 jobs_df
 
-# nova reka
 id <- unlist(jobs_df[1,"id"])
 name <- paste0("S2/", gsub(" ", "_", unlist(jobs_df[1, "title"])), ".nc")
 print(name)
