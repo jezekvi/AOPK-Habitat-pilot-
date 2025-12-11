@@ -1,4 +1,4 @@
-==============================================================================
+/*============================================================================
 File: GEE_Inundation_CH_mask.js
 Description: Water inundation classification using Sentinel-2 and canopy masking.
 Implements decision trees by Jussila et al.(2024) and Lefebvre et al. (2019) 
@@ -11,7 +11,7 @@ Jussila T, Heikkinen RK, Anttila S, et al (2024) Quantifying wetness variability
 Lefebvre G, Davranche A, Willm L, et al (2019) Introducing WIW for detecting the presence of water in wetlands with landsat and sentinel satellites. Remote sensing 11:2210
 
 Tolan, J., Yang, H.I., Nosarzewski, B., Couairon, G., Vo, H.V., Brandt, J., Spore, J., Majumdar, S., Haziza, D., Vamaraju, J. and Moutakanni, T., 2024. Very high resolution canopy height maps from RGB imagery using self-supervised vision transformer and convolutional decoder trained on aerial lidar. Remote Sensing of Environment, 300, p.113888
-==============================================================================
+==============================================================================*/
 
 var region = ee.FeatureCollection('projects/earthengine-438311/assets/inundation_area'); // a shapefile used to delineate the study area
 var s2Sr = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED'); // Sentinel-2 imagery has been harmonized to a common baseline version
