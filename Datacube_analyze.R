@@ -28,10 +28,10 @@ dplyr::tibble(
 ) -> scl_code
 print(scl_code)
 
-# for testing read one of the datacubes built in Retrieve_aapa.R
+# for testing read one of the datacubes
 obj <- read_stars("S2/reka_small.nc") 
 
-## Datacube subset of relevant season (April-September in northern Finland)
+## Datacube subset of relevant season
 time_vals <- st_get_dimension_values(obj, "t") # Extract dates
 keep_idx <- which(as.integer(format(time_vals, "%m")) %in% 4:9) # indices where the month is between 4 and 9
 st_dimensions(obj)
@@ -49,7 +49,7 @@ clear_dates <-
   obj |> 
   as_tibble() |> 
   group_by(t) |> 
-  summarize(prop_scl = sum(if_else(SCL %in% c(4,5,6, 7), 1, 0)) / n()) |> # potrebujeme i 7
+  summarize(prop_scl = sum(if_else(SCL %in% c(4,5,6, 7), 1, 0)) / n()) |> 
   filter(prop_scl > 0.95) |> 
   pull(t) 
 
@@ -94,7 +94,7 @@ plot(obj_wetness[12,,,174:193], col = pal)
 
 plot(obj_wetness[10,,,174:193], col = c("#e0c072", "#7fc8d6"))
 
-#grafy jussila roky
+# years
 plot(obj_wetness[10,,,1:9],   col = c("#e0c072", "#7fc8d6"))   # 2015
 plot(obj_wetness[10,,,10:15], col = c("#e0c072", "#7fc8d6"))   # 2016
 plot(obj_wetness[10,,,16:39], col = c("#e0c072", "#7fc8d6"))   # 2017
