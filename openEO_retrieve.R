@@ -1,3 +1,10 @@
+#============================================================================
+#File: openEO_retrieve.R
+
+#Habitat pilot partnership (2025): Biodiversa+ Habitat pilot final report.
+#Biodiversa+ report. Biodiversa+. European Biodiversity Partnership. TBD p + TBD p.
+#==============================================================================
+
 # Load required libraries
 library(openeo)
 library(sf)
