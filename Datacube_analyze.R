@@ -1,3 +1,11 @@
+/*============================================================================
+File: Datacube_analyze.R
+
+Habitat pilot partnership (2025): Biodiversa+ Habitat pilot final report.
+Biodiversa+ report. Biodiversa+. European Biodiversity Partnership.
+TBD p + TBD p.
+==============================================================================*/
+
 library(tidyverse)
 library(sf)
 library(stars)
